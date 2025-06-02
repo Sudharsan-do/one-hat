@@ -1,4 +1,5 @@
 import React from 'react';
+import Image from 'next/image';
 
 const sampleScripts = [
   {
@@ -101,10 +102,12 @@ const ScriptCard = ({ script }: { script: Script }) => {
         {script.status === 'success' && script.video && (
           <div className="mb-4">
             <div className="relative bg-gray-100 rounded-lg overflow-hidden">
-              <img 
+              <Image 
                 src={script.video.thumbnail} 
                 alt={script.title}
-                className="w-full h-32 object-cover"
+                width={320}
+                height={180}
+                className="w-full h-auto object-cover rounded-lg"
               />
               <div className="absolute inset-0 flex items-center justify-center">
                 <div className="bg-black bg-opacity-50 rounded-full p-3">

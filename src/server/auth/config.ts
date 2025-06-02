@@ -2,7 +2,6 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import { type DefaultSession, type NextAuthConfig } from "next-auth";
 import type { Adapter } from "next-auth/adapters";
 import CredentialsProvider from "next-auth/providers/credentials";
-import DiscordProvider from "next-auth/providers/discord";
 import { loginSchema } from "~/lib/validations/auth";
 import bcrypt from "bcryptjs";
 
@@ -52,8 +51,8 @@ export const authConfig = {
           }
         });
         if(user){
-          const match = await bcrypt.compare(model.data.password, user.hashedPassword as string);
-          if(match) return {id: user.id, role: user.role, email: user.email, name: user.name} as {id: string, role: UserRole, email: string, name: string};
+          const match = await bcrypt.compare(model.data.password, user.hashedPassword!);
+          if(match) return {id: user.id, role: user.role as UserRole, email: user.email, name: user.name};
         }
         return null;
       },
@@ -66,7 +65,7 @@ export const authConfig = {
       user: {
         ...session.user,
         id: user.id,
-        role: user.role as UserRole,
+        role: user.role,
       },
     }),
   },

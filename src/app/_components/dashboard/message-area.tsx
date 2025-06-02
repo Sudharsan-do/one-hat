@@ -117,7 +117,7 @@ function WelcomeScreen() {
                 </svg>
             </div>
             <h3 className="text-lg font-medium text-gray-900 mb-2">Welcome to your AI Health Assistant</h3>
-            <p className="text-gray-500 max-w-md">Ask me anything about your health, symptoms, or wellness tips. I'm here to help!</p>
+            <p className="text-gray-500 max-w-md">Ask me anything about your health, symptoms, or wellness tips. I&apos;m here to help!</p>
         </div>
     );
 }
@@ -152,9 +152,9 @@ export function InputArea({
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                    if (e.key === "Enter" && !e.shiftKey) {
                                         e.preventDefault();
-                                        handleSubmit(e);
+                                        void handleSubmit(e);
                                     }
                                 }}
                                 placeholder="Ask me about your health..."

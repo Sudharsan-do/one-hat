@@ -41,7 +41,7 @@ export default function DoctorChatPage() {
 
     useEffect(() => {
         // Fetch trending suggestions on component mount
-        fetchTrendingSuggestions().then(setSuggestions);
+        void fetchTrendingSuggestions().then(setSuggestions);
     }, []);
 
     const handleSubmit: (e: React.FormEvent) => Promise<void> = async (e: React.FormEvent) => {
@@ -92,7 +92,6 @@ export default function DoctorChatPage() {
             {/* Main Content */}
             <div className="flex flex-1 flex-col">
                 <Header 
-                    sidebarOpen={sidebarOpen}
                     setSidebarOpen={setSidebarOpen}
                     activeTab={activeTab}
                 />

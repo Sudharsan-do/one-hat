@@ -151,7 +151,6 @@ function LoginForm({ router }: { router: RouterType }) {
 }
 
 function SignupForm({
-    router,
     setIsLogin,
 }: {
     router: RouterType;
@@ -290,7 +289,8 @@ async function LoginAction(
             return;
         }
         toast.error("Invalid credentials. Please check your email and password.");
-    } catch (error) {
+    } catch (error: unknown) {
+        console.error('Login error:', error);
         toast.error("An error occurred during login. Please try again.");
     } finally {
         setIsLoading(false);

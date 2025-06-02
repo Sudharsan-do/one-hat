@@ -1,9 +1,7 @@
 export function Header({
-    sidebarOpen,
     setSidebarOpen,
     activeTab,
 }: {
-    sidebarOpen: boolean;
     setSidebarOpen: (open: boolean) => void;
     activeTab: string;
 }) {
