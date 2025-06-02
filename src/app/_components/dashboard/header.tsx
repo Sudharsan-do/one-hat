@@ -1,3 +1,5 @@
+import { signOut } from "next-auth/react";
+
 export function Header({
     setSidebarOpen,
     activeTab,
@@ -20,6 +22,12 @@ export function Header({
                     {activeTab === "ai-chat" ? "AI Health Assistant" : "My Videos"}
                 </h1>
             </div>
+            <button 
+                onClick={() => signOut({ callbackUrl: "/" })} 
+                className="cursor-pointer absolute top-4 right-4 px-4 py-2 rounded-md bg-teal-500 text-white font-medium hover:bg-teal-600 transition-colors"
+            >
+                Logout
+            </button>
         </div>
     );
 }

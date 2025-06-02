@@ -1,12 +1,21 @@
 import { redirect } from "next/navigation";
 import { auth } from "~/server/auth";
 import Link from "next/link";
+import { UserRole } from "@prisma/client";
 
 export default async function Home() {
   const session = await auth();
   
   if (session) {
-    redirect("/dashboard");
+    const userRole = session.user.role;
+    console.log("User role in AuthPageServer:", userRole);
+    if (userRole === UserRole.DOCTOR) {
+      redirect("/dashboard/doctor");
+    } else if (userRole === UserRole.USER) {
+      redirect("/dashboard/user");
+    } else {
+      redirect("/dashboard/admin");
+    }
   }
   
   return (

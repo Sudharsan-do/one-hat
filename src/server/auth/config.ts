@@ -1,20 +1,10 @@
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import { type DefaultSession, type NextAuthConfig } from "next-auth";
-import type { Adapter } from "next-auth/adapters";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { loginSchema } from "~/lib/validations/auth";
 import bcrypt from "bcryptjs";
 
 import { db } from "~/server/db";
-
-/**
- * User roles enum
- */
-export enum UserRole {
-  USER = "USER",
-  ADMIN = "ADMIN",
-  DOCTOR = "DOCTOR",
-}
+import type { UserRole } from "@prisma/client";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -39,7 +29,7 @@ export const authConfig = {
     CredentialsProvider({
       name: "credentials",
       id: "credentials",
-      async authorize(credentials, _req) {
+      async authorize(credentials) {
         const model = loginSchema.safeParse({
           email: credentials.email,
           password: credentials.password
@@ -52,21 +42,33 @@ export const authConfig = {
         });
         if(user){
           const match = await bcrypt.compare(model.data.password, user.hashedPassword!);
-          if(match) return {id: user.id, role: user.role as UserRole, email: user.email, name: user.name};
+          if(match) return user;
         }
+        console.error("Invalid credentials");
         return null;
       },
     }),
   ],
-  adapter: PrismaAdapter(db) as Adapter,
+  session: { 
+    strategy: "jwt",
+    maxAge: 24 * 60 * 60, // 1 day
+  },
   callbacks: {
-    session: ({ session, user }) => ({
-      ...session,
-      user: {
-        ...session.user,
-        id: user.id,
-        role: user.role,
-      },
-    }),
+    async jwt({ token, user }) {
+      // Persist the OAuth account info and user role/id to the token right after signin
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      // Send properties to the client
+      if (token) {
+        session.user.id = token.id as string;
+        session.user.role = token.role as UserRole;
+      }
+      return session;
+    },
   },
 } satisfies NextAuthConfig;

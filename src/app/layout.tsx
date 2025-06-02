@@ -6,6 +6,7 @@ import { Toaster } from "react-hot-toast";
 
 import { TRPCReactProvider } from "~/trpc/react";
 import { HydrateClient } from "~/trpc/server";
+import { SessionProvider } from "next-auth/react";
 
 export const metadata: Metadata = {
   title: "Create T3 App",
@@ -24,7 +25,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geist.variable}`}>
       <body>
-        <TRPCReactProvider><HydrateClient>{children}</HydrateClient></TRPCReactProvider>
+        <TRPCReactProvider>
+            {children}
+        </TRPCReactProvider>
         <Toaster position="bottom-right" />
       </body>
     </html>
