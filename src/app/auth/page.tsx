@@ -19,5 +19,5 @@ export default async function AuthPageServer() {
         }
     }
     
-    return (<AuthPage />);
+    return <AuthPage />;
 }
