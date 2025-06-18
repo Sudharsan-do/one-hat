@@ -5,7 +5,6 @@ import bcrypt from "bcryptjs";
 
 import { db } from "~/server/db";
 import type { UserRole } from "@prisma/client";
-import { generateSessionId } from "./session-util";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -19,7 +18,6 @@ declare module "next-auth" {
       id: string;
       role: UserRole;
     } & DefaultSession["user"];
-    sessionId: string; // Add sessionId to Session type
   }
   interface User {
     role: UserRole;
@@ -57,21 +55,18 @@ export const authConfig = {
   },
   callbacks: {
     async jwt({ token, user }) {
+      // Persist the OAuth account info and user role/id to the token right after signin
       if (user) {
         token.id = user.id;
         token.role = user.role;
-        if (!token.sessionId) {
-          token.sessionId = await generateSessionId();
-          console.log("Generated new session ID:", token.sessionId);
-        }
       }
       return token;
     },
     async session({ session, token }) {
+      // Send properties to the client
       if (token) {
         session.user.id = token.id as string;
         session.user.role = token.role as UserRole;
-        session.sessionId = token.sessionId as string;
       }
       return session;
     },

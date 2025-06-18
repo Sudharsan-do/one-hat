@@ -1,741 +1,581 @@
 "use client";
 
-import React, {
-    useState,
-    useEffect,
-    useMemo,
-    useCallback,
-    useRef,
-} from "react";
-import {
-    useReactTable,
-    getCoreRowModel,
-    getFilteredRowModel,
-    getPaginationRowModel,
-    flexRender,
-    createColumnHelper,
-} from "@tanstack/react-table";
-import { Download, Eye, LogOut, X, Check, AlertCircle } from "lucide-react";
-import { signOut } from "next-auth/react";
-import { UploadSection } from "~/app/_components/admin/upload-button";
-import { RejectSection } from "~/app/_components/admin/reject-button";
-import { api } from "~/trpc/react";
-import toast from "react-hot-toast";
+import React, { useState } from 'react';
 
-// Types
-interface BackendScriptItem {
-    id: string;
-    userId: string;
-    status: "PENDING" | "REJECTED" | "APPROVED";
-    createdAt: Date;
-    reason?: string | null;
-    content: string;
-    user?: { email?: string };
+// Type definitions
+interface ScriptScene {
+  text: string;
+  duration: number;
 }
 
-interface Script {
-    id: string;
-    userId: string;
-    email: string;
-    status: "PENDING" | "COMPLETED" | "REJECTED";
-    createdAt: string;
-    content: string;
-    reason?: string;
+interface ScriptContent {
+  title: string;
+  description: string;
+  scenes: ScriptScene[];
 }
 
-interface FilterState {
-    userId: string;
-    email: string;
-    scriptId: string;
-    status: string;
+interface VideoData {
+  url: string;
+  uploadedAt: string;
 }
 
-interface CountState {
-    pending: number;
-    completed: number;
-    rejected: number;
+type ScriptStatus = 'pending' | 'success' | 'rejected';
+
+interface AdminScript {
+  id: string;
+  title: string;
+  status: ScriptStatus;
+  userId: string;
+  userEmail: string;
+  createdAt: string;
+  scriptContent: ScriptContent;
+  video?: VideoData;
+  rejectionReason?: string;
+  rejectedAt?: string;
 }
 
-const STATUS_OPTIONS = [
-    { value: "", label: "All Statuses" },
-    { value: "PENDING", label: "Pending" },
-    { value: "COMPLETED", label: "Completed" },
-    { value: "REJECTED", label: "Rejected" },
-] as const;
+interface StatusConfig {
+  bg: string;
+  text: string;
+  label: string;
+}
 
-const STATUS_COLORS = {
-    PENDING: "bg-yellow-100 text-yellow-800 border-yellow-200",
-    COMPLETED: "bg-green-100 text-green-800 border-green-200",
-    REJECTED: "bg-red-100 text-red-800 border-red-200",
-} as const;
+interface StatusBadgeProps {
+  status: ScriptStatus;
+}
 
-const ScriptReviewDashboard = () => {
-    const [selectedScript, setSelectedScript] = useState<Script | null>(null);
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [count, setCount] = useState<CountState>({
-        pending: 0,
-        completed: 0,
-        rejected: 0,
-    });
-    const [filters, setFilters] = useState<FilterState>({
-        userId: "",
-        email: "",
-        scriptId: "",
-        status: "",
-    });
-    const [pageIndex, setPageIndex] = useState(0);
-    const [data, setData] = useState<Script[]>([]);
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+interface ScriptModalProps {
+  script: AdminScript | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpload: (scriptId: string, videoFile: File) => void;
+  onReject: (scriptId: string, reason: string) => void;
+}
 
-    // Memoized query parameters
-    const queryParams = useMemo(
-        () => ({
-            userId: filters.userId,
-            email: filters.email,
-            scriptId: filters.scriptId,
-            pageIndex,
-            status: filters.status
-                ? (filters.status as "PENDING" | "REJECTED" | "APPROVED")
-                : undefined,
-        }),
-        [filters, pageIndex],
-    );
+// Sample data
+const adminScripts: AdminScript[] = [
+  {
+    id: 'SCR001',
+    title: 'Introduction to React Hooks',
+    status: 'pending',
+    userId: 'USR12345',
+    userEmail: 'john.doe@example.com',
+    createdAt: '2024-01-15T10:30:00Z',
+    scriptContent: {
+      title: 'Introduction to React Hooks',
+      description: 'A comprehensive guide to React Hooks',
+      scenes: [
+        { text: 'Welcome to React Hooks tutorial', duration: 3 },
+        { text: 'Let\'s start with useState', duration: 5 }
+      ]
+    }
+  },
+  {
+    id: 'SCR002',
+    title: 'Building Responsive Layouts',
+    status: 'success',
+    userId: 'USR67890',
+    userEmail: 'jane.smith@example.com',
+    createdAt: '2024-01-14T14:20:00Z',
+    video: {
+      url: 'https://example.com/video2.mp4',
+      uploadedAt: '2024-01-14T16:45:00Z'
+    },
+    scriptContent: {
+      title: 'Building Responsive Layouts',
+      description: 'Learn CSS Grid and Flexbox',
+      scenes: [
+        { text: 'CSS Grid vs Flexbox comparison', duration: 4 },
+        { text: 'Building responsive components', duration: 6 }
+      ]
+    }
+  },
+  {
+    id: 'SCR003',
+    title: 'JavaScript ES6 Features',
+    status: 'pending',
+    userId: 'USR11111',
+    userEmail: 'alex.wilson@example.com',
+    createdAt: '2024-01-16T09:15:00Z',
+    scriptContent: {
+      title: 'JavaScript ES6 Features',
+      description: 'Modern JavaScript features overview',
+      scenes: [
+        { text: 'Arrow functions and template literals', duration: 4 },
+        { text: 'Destructuring and spread operator', duration: 5 }
+      ]
+    }
+  },
+  {
+    id: 'SCR004',
+    title: 'Node.js Best Practices',
+    status: 'rejected',
+    userId: 'USR22222',
+    userEmail: 'bob.johnson@example.com',
+    createdAt: '2024-01-13T11:30:00Z',
+    rejectionReason: 'Content does not meet quality standards',
+    rejectedAt: '2024-01-13T15:20:00Z',
+    scriptContent: {
+      title: 'Node.js Best Practices',
+      description: 'Server-side JavaScript best practices',
+      scenes: [
+        { text: 'Setting up Express server', duration: 3 },
+        { text: 'Database connection patterns', duration: 7 }
+      ]
+    }
+  },
+  {
+    id: 'SCR005',
+    title: 'Database Design Fundamentals',
+    status: 'pending',
+    userId: 'USR33333',
+    userEmail: 'carol.davis@example.com',
+    createdAt: '2024-01-12T16:45:00Z',
+    scriptContent: {
+      title: 'Database Design Fundamentals',
+      description: 'Relational database design principles',
+      scenes: [
+        { text: 'Entity relationship modeling', duration: 5 },
+        { text: 'Normalization techniques', duration: 6 }
+      ]
+    }
+  }
+];
 
-    // API query hook
-    const {
-        data: queryResult,
-        error,
-        refetch,
-        isPending,
-    } = api.video.fetchScripts.useQuery(queryParams, {
-        placeholderData: (prev) => prev,
-        refetchOnWindowFocus: false,
-    });
+const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
+  const statusConfig: Record<ScriptStatus, StatusConfig> = {
+    success: {
+      bg: 'bg-green-100',
+      text: 'text-green-800',
+      label: 'Completed'
+    },
+    rejected: {
+      bg: 'bg-red-100',
+      text: 'text-red-800',
+      label: 'Rejected'
+    },
+    pending: {
+      bg: 'bg-yellow-100',
+      text: 'text-yellow-800',
+      label: 'Pending Review'
+    }
+  };
 
-    // Handle review click
-    const handleReviewClick = useCallback((script: Script) => {
-        setSelectedScript(script);
-        setIsModalOpen(true);
-    }, []);
-
-    // Handle download script
-    const handleDownloadScript = useCallback(() => {
-        if (!selectedScript?.content) return;
-
-        try {
-            const blob = new Blob([selectedScript.content], {
-                type: "text/plain",
-            });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `script-${selectedScript.id}.txt`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        } catch (error) {
-            toast.error("Failed to download script");
-            console.error("Download error:", error);
-        }
-    }, [selectedScript]);
-
-    const handleFilterChange = useCallback(
-        (key: keyof FilterState, value: string) => {
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
-
-            timeoutRef.current = setTimeout(() => {
-                setFilters((prev) => ({ ...prev, [key]: value }));
-                setPageIndex(0);
-            }, 100);
-        },
-        [],
-    );
-
-    // Clear all filters
-    const clearFilters = useCallback(() => {
-        setFilters({ userId: "", email: "", scriptId: "", status: "" });
-        setPageIndex(0);
-    }, []);
-
-    // Handle modal close
-    const handleCloseModal = useCallback(() => {
-        setIsModalOpen(false);
-        setSelectedScript(null);
-    }, []);
-
-    // Handle action completion
-    const handleActionComplete = useCallback(() => {
-        handleCloseModal();
-        void refetch();
-    }, [handleCloseModal, refetch]);
-
-    // Transform backend data to frontend format
-    const transformScriptData = useCallback(
-        (item: BackendScriptItem): Script => ({
-            id: item.id,
-            userId: item.userId,
-            email: item.user?.email ?? "",
-            status: item.status === "APPROVED" ? "COMPLETED" : item.status,
-            createdAt: item.createdAt.toString(),
-            content: item.content,
-            reason: item.reason ?? undefined,
-        }),
-        [],
-    );
-
-    // Update data when query result changes
-    useEffect(() => {
-        if (queryResult) {
-            setData(queryResult.list.map(transformScriptData));
-            setCount({
-                pending: queryResult.pendingCount,
-                completed: queryResult.completedCount,
-                rejected: queryResult.rejectedCount,
-            });
-        } else if (error) {
-            toast.error("Failed to load scripts data");
-            setData([]);
-            console.error("Failed to load scripts data:", error);
-        }
-    }, [queryResult, error, transformScriptData]);
-
-    // Column definitions
-    const columns = useMemo(() => {
-        const columnHelper = createColumnHelper<Script>();
-
-        return [
-            columnHelper.accessor("id", {
-                header: "Script ID",
-                cell: (info) => (
-                    <span className="font-mono text-sm text-blue-600">
-                        {info.getValue()}
-                    </span>
-                ),
-            }),
-            columnHelper.accessor("userId", {
-                header: "User ID",
-                cell: (info) => (
-                    <span className="text-gray-700">{info.getValue()}</span>
-                ),
-            }),
-            columnHelper.accessor("email", {
-                header: "Email",
-                cell: (info) => (
-                    <span className="text-gray-700">{info.getValue()}</span>
-                ),
-            }),
-            columnHelper.accessor("status", {
-                header: "Status",
-                cell: (info) => {
-                    const status = info.getValue();
-                    return (
-                        <span
-                            className={`rounded-full border px-3 py-1 text-xs font-medium ${STATUS_COLORS[status]}`}
-                        >
-                            {status.charAt(0).toUpperCase() +
-                                status.slice(1).toLowerCase()}
-                        </span>
-                    );
-                },
-            }),
-            columnHelper.accessor("createdAt", {
-                header: "Created At",
-                cell: (info) => (
-                    <span className="text-sm text-gray-600">
-                        {new Date(info.getValue()).toLocaleDateString("en-US", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                        })}
-                    </span>
-                ),
-            }),
-            columnHelper.display({
-                id: "actions",
-                header: "Actions",
-                cell: (info) => (
-                    <button
-                        onClick={() => handleReviewClick(info.row.original)}
-                        className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-                    >
-                        <Eye size={16} />
-                        Review
-                    </button>
-                ),
-            }),
-        ];
-    }, [handleReviewClick]);
-
-    // Table configuration
-    const table = useReactTable({
-        data,
-        columns,
-        rowCount: count.pending + count.completed + count.rejected,
-        state: {
-            pagination: {
-                pageIndex,
-                pageSize: 10,
-            },
-        },
-        getCoreRowModel: getCoreRowModel(),
-        getFilteredRowModel: getFilteredRowModel(),
-        getPaginationRowModel: getPaginationRowModel(),
-        manualPagination: true,
-        onPaginationChange: (updater) => {
-            const newState =
-                typeof updater === "function"
-                    ? updater(table.getState().pagination)
-                    : updater;
-            setPageIndex(newState.pageIndex);
-        },
-    });
-
-    // Handle sign out
-    const handleSignOut = useCallback(() => {
-        void signOut({ callbackUrl: "/" });
-    }, []);
-
-    return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <div className="border-b bg-white shadow-sm">
-                <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                    <div className="flex h-16 items-center justify-between">
-                        <div className="flex items-center">
-                            <h1 className="text-2xl font-bold text-gray-900">
-                                Script Review Dashboard
-                            </h1>
-                        </div>
-                        <button
-                            onClick={handleSignOut}
-                            className="flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 text-white transition-colors hover:bg-red-700"
-                        >
-                            <LogOut size={16} />
-                            Logout
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                {/* Statistics Cards */}
-                <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
-                    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                        <div className="flex items-center">
-                            <div className="flex-shrink-0">
-                                <AlertCircle className="h-8 w-8 text-yellow-500" />
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">
-                                    Pending Scripts
-                                </p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {count.pending}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                        <div className="flex items-center">
-                            <div className="flex-shrink-0">
-                                <Check className="h-8 w-8 text-green-500" />
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">
-                                    Completed Scripts
-                                </p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {count.completed}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    <div className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                        <div className="flex items-center">
-                            <div className="flex-shrink-0">
-                                <X className="h-8 w-8 text-red-500" />
-                            </div>
-                            <div className="ml-4">
-                                <p className="text-sm font-medium text-gray-600">
-                                    Rejected Scripts
-                                </p>
-                                <p className="text-2xl font-bold text-gray-900">
-                                    {count.rejected}
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Filters */}
-                <div className="mb-8 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-                    <div className="mb-4 flex items-center justify-between">
-                        <h3 className="text-lg font-medium text-gray-900">
-                            Filters
-                        </h3>
-                        <button
-                            onClick={clearFilters}
-                            className="text-sm text-blue-600 hover:text-blue-700"
-                        >
-                            Clear All
-                        </button>
-                    </div>
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-                        <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">
-                                User ID
-                            </label>
-                            <input
-                                type="text"
-                                value={filters.userId}
-                                onChange={(e) =>
-                                    handleFilterChange("userId", e.target.value)
-                                }
-                                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                                placeholder="Filter by User ID"
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">
-                                Email
-                            </label>
-                            <input
-                                type="text"
-                                value={filters.email}
-                                onChange={(e) =>
-                                    handleFilterChange("email", e.target.value)
-                                }
-                                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                                placeholder="Filter by Email"
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">
-                                Script ID
-                            </label>
-                            <input
-                                type="text"
-                                value={filters.scriptId}
-                                onChange={(e) =>
-                                    handleFilterChange(
-                                        "scriptId",
-                                        e.target.value,
-                                    )
-                                }
-                                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                                placeholder="Filter by Script ID"
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-sm font-medium text-gray-700">
-                                Status
-                            </label>
-                            <select
-                                value={filters.status}
-                                onChange={(e) =>
-                                    handleFilterChange("status", e.target.value)
-                                }
-                                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                            >
-                                {STATUS_OPTIONS.map((option) => (
-                                    <option
-                                        key={option.value}
-                                        value={option.value}
-                                    >
-                                        {option.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Table */}
-                <div className="relative rounded-lg border border-gray-200 bg-white shadow-sm">
-                    {/* Loading Spinner Overlay */}
-                    {isPending && (
-                        <div className="bg-opacity-70 absolute inset-0 z-10 flex items-center justify-center bg-white">
-                            <svg
-                                className="h-10 w-10 animate-spin text-blue-600"
-                                xmlns="http://www.w3.org/2000/svg"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                            >
-                                <circle
-                                    className="opacity-25"
-                                    cx="12"
-                                    cy="12"
-                                    r="10"
-                                    stroke="currentColor"
-                                    strokeWidth="4"
-                                ></circle>
-                                <path
-                                    className="opacity-75"
-                                    fill="currentColor"
-                                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                                ></path>
-                            </svg>
-                        </div>
-                    )}
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
-                                {table.getHeaderGroups().map((headerGroup) => (
-                                    <tr key={headerGroup.id}>
-                                        {headerGroup.headers.map((header) => (
-                                            <th
-                                                key={header.id}
-                                                className="px-6 py-3 text-left text-xs font-medium tracking-wider text-gray-500 uppercase"
-                                            >
-                                                {header.isPlaceholder
-                                                    ? null
-                                                    : flexRender(
-                                                          header.column
-                                                              .columnDef.header,
-                                                          header.getContext(),
-                                                      )}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                ))}
-                            </thead>
-                            <tbody className="divide-y divide-gray-200 bg-white">
-                                {table.getRowModel().rows.map((row) => (
-                                    <tr
-                                        key={row.id}
-                                        className="hover:bg-gray-50"
-                                    >
-                                        {row.getVisibleCells().map((cell) => (
-                                            <td
-                                                key={cell.id}
-                                                className="px-6 py-4 whitespace-nowrap"
-                                            >
-                                                {flexRender(
-                                                    cell.column.columnDef.cell,
-                                                    cell.getContext(),
-                                                )}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Pagination */}
-                    <div className="flex items-center justify-between border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
-                        <div className="flex flex-1 justify-between sm:hidden">
-                            <button
-                                onClick={() => table.previousPage()}
-                                disabled={!table.getCanPreviousPage()}
-                                className="relative inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                Previous
-                            </button>
-                            <button
-                                onClick={() => table.nextPage()}
-                                disabled={!table.getCanNextPage()}
-                                className="relative ml-3 inline-flex items-center rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                Next
-                            </button>
-                        </div>
-                        <div className="hidden sm:flex sm:flex-1 sm:items-center sm:justify-between">
-                            <div>
-                                <p className="text-sm text-gray-700">
-                                    Showing{" "}
-                                    <span className="font-medium">
-                                        {table.getState().pagination.pageIndex *
-                                            table.getState().pagination
-                                                .pageSize +
-                                            1}
-                                    </span>{" "}
-                                    to{" "}
-                                    <span className="font-medium">
-                                        {Math.min(
-                                            (table.getState().pagination
-                                                .pageIndex +
-                                                1) *
-                                                table.getState().pagination
-                                                    .pageSize,
-                                            count.pending +
-                                                count.completed +
-                                                count.rejected,
-                                        )}
-                                    </span>{" "}
-                                    of{" "}
-                                    <span className="font-medium">
-                                        {count.pending +
-                                            count.completed +
-                                            count.rejected}
-                                    </span>{" "}
-                                    results
-                                </p>
-                            </div>
-                            <div>
-                                <nav
-                                    className="relative z-0 inline-flex -space-x-px rounded-md shadow-sm"
-                                    aria-label="Pagination"
-                                >
-                                    <button
-                                        onClick={() => table.setPageIndex(0)}
-                                        disabled={!table.getCanPreviousPage()}
-                                        className="relative inline-flex items-center rounded-l-md border border-gray-300 bg-white px-2 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        First
-                                    </button>
-                                    <button
-                                        onClick={() => table.previousPage()}
-                                        disabled={!table.getCanPreviousPage()}
-                                        className="relative inline-flex items-center border border-gray-300 bg-white px-2 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        Previous
-                                    </button>
-                                    <span className="relative inline-flex items-center border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700">
-                                        Page{" "}
-                                        {table.getState().pagination.pageIndex +
-                                            1}{" "}
-                                        of {table.getPageCount()}
-                                    </span>
-                                    <button
-                                        onClick={() => table.nextPage()}
-                                        disabled={!table.getCanNextPage()}
-                                        className="relative inline-flex items-center border border-gray-300 bg-white px-2 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        Next
-                                    </button>
-                                    <button
-                                        onClick={() =>
-                                            table.setPageIndex(
-                                                table.getPageCount() - 1,
-                                            )
-                                        }
-                                        disabled={!table.getCanNextPage()}
-                                        className="relative inline-flex items-center rounded-r-md border border-gray-300 bg-white px-2 py-2 text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-                                    >
-                                        Last
-                                    </button>
-                                </nav>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Modal */}
-            {isModalOpen && selectedScript && (
-                <div className="bg-opacity-50 fixed inset-0 z-50 h-full w-full overflow-y-auto bg-gray-600">
-                    <div className="relative top-20 mx-auto w-11/12 max-w-4xl rounded-md border bg-white p-5 shadow-lg">
-                        <div className="mt-3">
-                            <div className="mb-4 flex items-center justify-between">
-                                <h3 className="text-lg font-medium text-gray-900">
-                                    Review Script: {selectedScript.id}
-                                </h3>
-                                <button
-                                    onClick={handleCloseModal}
-                                    className="text-gray-400 hover:text-gray-600"
-                                >
-                                    <X size={24} />
-                                </button>
-                            </div>
-
-                            <div className="mb-6 grid grid-cols-1 gap-6 md:grid-cols-2">
-                                <div>
-                                    <h4 className="mb-2 font-medium text-gray-900">
-                                        Script Details
-                                    </h4>
-                                    <div className="space-y-2 text-sm">
-                                        <p>
-                                            <span className="font-medium">
-                                                User ID:
-                                            </span>{" "}
-                                            {selectedScript.userId}
-                                        </p>
-                                        <p>
-                                            <span className="font-medium">
-                                                Email:
-                                            </span>{" "}
-                                            {selectedScript.email}
-                                        </p>
-                                        <p>
-                                            <span className="font-medium">
-                                                Status:
-                                            </span>{" "}
-                                            {selectedScript.status}
-                                        </p>
-                                        <p>
-                                            <span className="font-medium">
-                                                Created:
-                                            </span>{" "}
-                                            {new Date(
-                                                selectedScript.createdAt,
-                                            ).toLocaleString()}
-                                        </p>
-                                    </div>
-                                </div>
-                                <div>
-                                    <h4 className="mb-2 font-medium text-gray-900">
-                                        Actions
-                                    </h4>
-                                    <button
-                                        onClick={handleDownloadScript}
-                                        className="flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-white transition-colors hover:bg-blue-700"
-                                    >
-                                        <Download size={16} />
-                                        Download Script
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div className="mb-6">
-                                <h4 className="mb-2 font-medium text-gray-900">
-                                    Script Content
-                                </h4>
-                                <div className="max-h-60 overflow-y-auto rounded-md bg-gray-50 p-4">
-                                    <pre className="text-sm whitespace-pre-wrap text-gray-700">
-                                        {selectedScript.content ||
-                                            "No content available"}
-                                    </pre>
-                                </div>
-                            </div>
-
-                            {selectedScript.status === "PENDING" && (
-                                <div className="space-y-6">
-                                    <UploadSection
-                                        scriptId={selectedScript.id}
-                                        onComplete={handleActionComplete}
-                                    />
-                                    <RejectSection
-                                        scriptId={selectedScript.id}
-                                        onComplete={handleActionComplete}
-                                    />
-                                </div>
-                            )}
-
-                            {selectedScript.status === "REJECTED" &&
-                                selectedScript.reason && (
-                                    <div className="mt-4">
-                                        <h4 className="mb-2 font-medium text-gray-900">
-                                            Rejection Reason
-                                        </h4>
-                                        <div className="rounded-md border border-red-200 bg-red-50 p-3">
-                                            <p className="text-sm text-red-800">
-                                                {selectedScript.reason}
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
+  const config = statusConfig[status];
+  
+  return (
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${config.bg} ${config.text}`}>
+      {config.label}
+    </span>
+  );
 };
 
-export default ScriptReviewDashboard;
+const ScriptModal: React.FC<ScriptModalProps> = ({ script, isOpen, onClose, onUpload, onReject }) => {
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>('');
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+
+  if (!isOpen || !script) return null;
+
+  const handleVideoUpload = async (): Promise<void> => {
+    if (!videoFile) return;
+    setIsUploading(true);
+    
+    // Simulate upload process
+    setTimeout(() => {
+      onUpload(script.id, videoFile);
+      setIsUploading(false);
+      setVideoFile(null);
+      onClose();
+    }, 2000);
+  };
+
+  const handleReject = (): void => {
+    if (!rejectionReason.trim()) return;
+    onReject(script.id, rejectionReason);
+    setRejectionReason('');
+    onClose();
+  };
+
+  const downloadScript = (): void => {
+    const dataStr = JSON.stringify(script.scriptContent, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = `script-${script.id}.json`;
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      setVideoFile(files[0] ?? null);
+    }
+  };
+
+  const handleRejectionReasonChange = (event: React.ChangeEvent<HTMLTextAreaElement>): void => {
+    setRejectionReason(event.target.value);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+      <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-medium text-gray-900">Script Details</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+            type="button"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Script ID</label>
+              <p className="mt-1 text-sm text-gray-900">{script.id}</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">Status</label>
+              <div className="mt-1">
+                <StatusBadge status={script.status} />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700">User ID</label>
+              <p className="mt-1 text-sm text-gray-900">{script.userId}</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700">User Email</label>
+              <p className="mt-1 text-sm text-gray-900">{script.userEmail}</p>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Title</label>
+            <p className="mt-1 text-sm text-gray-900">{script.title}</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700">Created At</label>
+            <p className="mt-1 text-sm text-gray-900">
+              {new Date(script.createdAt).toLocaleString()}
+            </p>
+          </div>
+
+          {script.status === 'rejected' && script.rejectionReason && script.rejectedAt && (
+            <div className="bg-red-50 border border-red-200 rounded-md p-3">
+              <label className="block text-sm font-medium text-red-800">Rejection Reason</label>
+              <p className="mt-1 text-sm text-red-700">{script.rejectionReason}</p>
+              <p className="mt-1 text-xs text-red-600">
+                Rejected on: {new Date(script.rejectedAt).toLocaleString()}
+              </p>
+            </div>
+          )}
+
+          <div className="border-t pt-4">
+            <button
+              onClick={downloadScript}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              type="button"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Download Script JSON
+            </button>
+          </div>
+
+          {script.status === 'pending' && (
+            <div className="border-t pt-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Upload Video File
+                </label>
+                <input
+                  type="file"
+                  accept="video/*"
+                  onChange={handleFileChange}
+                  className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                />
+                <button
+                  onClick={handleVideoUpload}
+                  disabled={!videoFile || isUploading}
+                  className="mt-2 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                >
+                  {isUploading ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Uploading...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                      </svg>
+                      Upload Video
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Or Reject Script
+                </label>
+                <textarea
+                  value={rejectionReason}
+                  onChange={handleRejectionReasonChange}
+                  placeholder="Enter rejection reason..."
+                  rows={3}
+                  className="block w-full border-gray-300 rounded-md shadow-sm focus:ring-red-500 focus:border-red-500 sm:text-sm"
+                />
+                <button
+                  onClick={handleReject}
+                  disabled={!rejectionReason.trim()}
+                  className="mt-2 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                >
+                  <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Reject Script
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+const AdminScriptsPage: React.FC = () => {
+  const [scripts, setScripts] = useState<AdminScript[]>(adminScripts);
+  const [selectedScript, setSelectedScript] = useState<AdminScript | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [filterStatus, setFilterStatus] = useState<'all' | ScriptStatus>('all');
+
+  const pendingCount = scripts.filter(s => s.status === 'pending').length;
+  const completedCount = scripts.filter(s => s.status === 'success').length;
+  const rejectedCount = scripts.filter(s => s.status === 'rejected').length;
+
+  const filteredScripts = filterStatus === 'all' 
+    ? scripts 
+    : scripts.filter(s => s.status === filterStatus);
+
+  const handleViewScript = (script: AdminScript): void => {
+    setSelectedScript(script);
+    setIsModalOpen(true);
+  };
+
+  const handleUploadVideo = (scriptId: string, videoFile: File): void => {
+    setScripts(prev => prev.map(script => 
+      script.id === scriptId 
+        ? {
+            ...script,
+            status: 'success' as const,
+            video: {
+              url: URL.createObjectURL(videoFile),
+              uploadedAt: new Date().toISOString()
+            }
+          }
+        : script
+    ));
+  };
+
+  const handleRejectScript = (scriptId: string, reason: string): void => {
+    setScripts(prev => prev.map(script => 
+      script.id === scriptId 
+        ? {
+            ...script,
+            status: 'rejected' as const,
+            rejectionReason: reason,
+            rejectedAt: new Date().toISOString()
+          }
+        : script
+    ));
+  };
+
+  const handleFilterChange = (event: React.ChangeEvent<HTMLSelectElement>): void => {
+    setFilterStatus(event.target.value as 'all' | ScriptStatus);
+  };
+
+  if (filteredScripts.length === 0 && filterStatus === 'all' && scripts.length === 0) {
+    return (
+      <div className="flex-1 bg-white p-6">
+        <div className="mx-auto max-w-4xl">
+          <div className="text-center py-16">
+            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Admin Dashboard</h3>
+            <p className="text-gray-500">No scripts submitted yet.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 bg-gray-50 p-6">
+      <div className="mx-auto max-w-7xl">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Admin - Script Management</h1>
+          <p className="text-gray-600">Review and manage user-submitted video scripts</p>
+          
+          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-3">
+            <div className="bg-white overflow-hidden shadow rounded-lg">
+              <div className="p-5">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-yellow-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="ml-5 w-0 flex-1">
+                    <dl>
+                      <dt className="text-sm font-medium text-gray-500 truncate">Pending Review</dt>
+                      <dd className="text-lg font-medium text-gray-900">{pendingCount}</dd>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white overflow-hidden shadow rounded-lg">
+              <div className="p-5">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="ml-5 w-0 flex-1">
+                    <dl>
+                      <dt className="text-sm font-medium text-gray-500 truncate">Completed</dt>
+                      <dd className="text-lg font-medium text-gray-900">{completedCount}</dd>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white overflow-hidden shadow rounded-lg">
+              <div className="p-5">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0">
+                    <div className="w-8 h-8 bg-red-100 rounded-full flex items-center justify-center">
+                      <svg className="w-5 h-5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="ml-5 w-0 flex-1">
+                    <dl>
+                      <dt className="text-sm font-medium text-gray-500 truncate">Rejected</dt>
+                      <dd className="text-lg font-medium text-gray-900">{rejectedCount}</dd>
+                    </dl>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 flex items-center space-x-4">
+            <label className="text-sm font-medium text-gray-700">Filter by status:</label>
+            <select
+              value={filterStatus}
+              onChange={handleFilterChange}
+              className="border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+            >
+              <option value="all">All Scripts</option>
+              <option value="pending">Pending Review</option>
+              <option value="success">Completed</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="bg-white shadow overflow-hidden sm:rounded-md">
+          <ul className="divide-y divide-gray-200">
+            {filteredScripts.map((script) => (
+              <li key={script.id}>
+                <div className="px-4 py-4 sm:px-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <div className="flex-shrink-0">
+                        <StatusBadge status={script.status} />
+                      </div>
+                      <div className="ml-4">
+                        <div className="flex items-center">
+                          <p className="text-sm font-medium text-blue-600 truncate">
+                            {script.title}
+                          </p>
+                          <p className="ml-2 text-sm text-gray-500">#{script.id}</p>
+                        </div>
+                        <div className="mt-1">
+                          <p className="text-sm text-gray-900">
+                            User: {script.userEmail} ({script.userId})
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            Submitted: {new Date(script.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => handleViewScript(script)}
+                        className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        type="button"
+                      >
+                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        Review
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <ScriptModal
+          script={selectedScript}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onUpload={handleUploadVideo}
+          onReject={handleRejectScript}
+        />
+      </div>
+    </div>
+  );
+};
+
+
+export default AdminScriptsPage;
